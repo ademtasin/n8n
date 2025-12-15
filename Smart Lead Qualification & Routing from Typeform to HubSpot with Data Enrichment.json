@@ -1,0 +1,843 @@
+{
+  "name": "Smart Lead Qualification & Routing from Typeform to HubSpot with Data Enrichment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-lead-webhook",
+        "options": {}
+      },
+      "id": "89f780b8-2501-4801-bdbe-32ed3193f75e",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1696,
+        240
+      ],
+      "webhookId": "4a46da4b-44dd-4a4f-96c5-faf99b21c6f8"
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json.body.form_response;\nconst answers = body.answers || [];\nconst fields = body.definition.fields || [];\n\n// yardımcı fonksiyon: field id'den title'ı bul\nfunction getTitleById(id) {\n  return fields.find(f => f.id === id)?.title?.toLowerCase() || '';\n}\n\n// her answer için title-title eşlemesi kur\nconst data = {};\nfor (const a of answers) {\n  const title = getTitleById(a.field.id);\n  if (title.includes('first name')) data.first_name = a.text;\n  if (title.includes('last name')) data.last_name = a.text;\n  if (title.includes('company')) data.company = a.text;\n  if (a.type === 'email') data.email = a.email;\n}\n\n// domain türet\nif (data.email && data.email.includes('@')) {\n  data.domain = data.email.split('@')[1];\n}\n\nreturn [{ json: data }];\n"
+      },
+      "id": "c6f6b747-225d-4920-b50d-b2b44e03040f",
+      "name": "Extract Lead Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.hunter.io/v2/email-verifier",
+        "options": {},
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "name": "api_key",
+              "value": "=eb9cab53addbdbe3059617c7f348b765c2a8b2c2"
+            }
+          ]
+        }
+      },
+      "id": "ef9656b8-4cf5-4975-824d-de79687a24d9",
+      "name": "Hunter.io Verification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -1168,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.lead_score}}",
+              "operation": "largerEqual",
+              "value2": 70
+            }
+          ]
+        }
+      },
+      "id": "91336dc1-f023-4e9f-ab1f-3fe8c8d0e960",
+      "name": "IF High Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1616,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $('Extract Lead Data').item.json.email }}",
+        "additionalFields": {
+          "city": "={{ $('Lead Scoring & Routing Logic').item.json.locality }}",
+          "companyName": "={{ $('Lead Scoring & Routing Logic').item.json.name }}",
+          "country": "={{ $('Lead Scoring & Routing Logic').item.json.country }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "lead_score",
+                "value": "={{ $('Lead Scoring & Routing Logic').item.json.lead_score }}"
+              },
+              {
+                "property": "lead_tier",
+                "value": "={{ $('Lead Scoring & Routing Logic').item.json.lead_tier }}"
+              },
+              {
+                "property": "lead_stage",
+                "value": "Qualified"
+              }
+            ]
+          },
+          "firstName": "={{ $('Extract Lead Data').item.json.first_name }}",
+          "industry": "={{ $('Lead Scoring & Routing Logic').item.json.industry }}",
+          "lastName": "={{ $('Extract Lead Data').item.json.last_name }}",
+          "linkedinUrl": "={{ $('Lead Scoring & Routing Logic').item.json.linkedin_url }}",
+          "websiteUrl": "={{ $('Lead Scoring & Routing Logic').item.json.domain }}"
+        },
+        "options": {}
+      },
+      "id": "64a7c1af-6899-4173-bae4-124dca2e7a92",
+      "name": "HubSpot Create Contact (Qualified)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        -1168,
+        576
+      ],
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "HXbJUSf6OXv1U2sl",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://companyenrichment.abstractapi.com/v1/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "1063c3df50384a64b9f957e3233ee223"
+            },
+            {
+              "name": "domain",
+              "value": "={{ $json.domain }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        240
+      ],
+      "id": "44600d90-490b-453a-9a9d-233e5bf93f0e",
+      "name": "Abstract Company Enrichment"
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $json.data?.email || ''\nlet domain = ''\nif (email.includes('@')) domain = email.split('@')[1]\nreturn [{ json: { domain } }]\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -912,
+        240
+      ],
+      "id": "27ca77c7-0b10-44c6-8200-0a7c6f8fe08a",
+      "name": "Extract Domain for Abstract"
+    },
+    {
+      "parameters": {
+        "functionCode": "const lead = $json;\n\nlet score = 0;\n\n// Şirket büyüklüğü\nif (lead.employees_count > 1000) score += 40;\nelse if (lead.employees_count > 100) score += 25;\nelse if (lead.employees_count > 10) score += 10;\n\n// Ülke önceliği (örnek)\nif (lead.country === 'United States' || lead.country === 'United Kingdom') score += 15;\n\n// Sektör hedefi\nconst targetIndustries = ['Software', 'Internet', 'Information Technology'];\nif (targetIndustries.includes(lead.industry)) score += 20;\n\n// E-posta domain kontrolü\nif (!lead.domain.includes('gmail') && !lead.domain.includes('yahoo')) score += 10;\n\n// LinkedIn bilgisi varsa\nif (lead.linkedin_url) score += 5;\n\n// Sonuç\nlet leadTier = 'Cold';\nif (score >= 70) leadTier = 'Hot';\nelse if (score >= 40) leadTier = 'Warm';\n\nreturn [{\n  json: {\n    ...lead,\n    lead_score: score,\n    lead_tier: leadTier,\n    timestamp: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "d37b71be-c541-4935-b0d1-e7b740dc0b93",
+      "name": "Lead Scoring & Routing Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $('Extract Lead Data').item.json.email }}",
+        "additionalFields": {
+          "city": "={{ $('Lead Scoring & Routing Logic').item.json.locality }}",
+          "companyName": "={{ $('Lead Scoring & Routing Logic').item.json.name }}",
+          "country": "={{ $('Lead Scoring & Routing Logic').item.json.country }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "lead_score",
+                "value": "={{ $('Lead Scoring & Routing Logic').item.json.lead_score }}"
+              },
+              {
+                "property": "lead_tier",
+                "value": "={{ $('Lead Scoring & Routing Logic').item.json.lead_tier }}"
+              },
+              {
+                "property": "lead_stage",
+                "value": "Nurture"
+              }
+            ]
+          },
+          "firstName": "={{ $('Extract Lead Data').item.json.first_name }}",
+          "industry": "={{ $('Lead Scoring & Routing Logic').item.json.industry }}",
+          "lastName": "={{ $('Extract Lead Data').item.json.last_name }}",
+          "linkedinUrl": "={{ $('Lead Scoring & Routing Logic').item.json.linkedin_url }}",
+          "websiteUrl": "={{ $('Lead Scoring & Routing Logic').item.json.domain }}"
+        },
+        "options": {}
+      },
+      "id": "4ba2f57d-2877-475b-b19b-2f55b50cff17",
+      "name": "HubSpot Create Contact (Nurture)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        -1168,
+        976
+      ],
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "HXbJUSf6OXv1U2sl",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "C08FJNLQP5G",
+        "text": "=🔥 *New Nurture Lead Alert*\n👋 Hey team, a lead is still in NURTURE stage:\n  \n🏢 *{{ $json.results[0].properties.company }}*  \n📧 {{ $json.results[0].properties.email }}  \n💥 Score: {{ $json.results[0].properties.lead_score }}  \n🕒 Checked: {{ new Date().toLocaleString('tr-TR') }}\n",
+        "otherOptions": {},
+        "attachments": []
+      },
+      "id": "4b82223a-4d20-4226-8d28-211286e8cd0c",
+      "name": "Slack Notification → 📨 Nurture Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        736
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "HayYvLithFNtjTbK",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1XXwXLyWZIEy7JrABTSM0IDI0-Y-6TKoz8E0zIlB0BO8",
+          "mode": "list",
+          "cachedResultName": "Nurture Follow-Up Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1XXwXLyWZIEy7JrABTSM0IDI0-Y-6TKoz8E0zIlB0BO8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1XXwXLyWZIEy7JrABTSM0IDI0-Y-6TKoz8E0zIlB0BO8/edit#gid=0"
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "Date",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "Company",
+              "fieldValue": "={{ $json.results[0].properties.company }}"
+            },
+            {
+              "fieldId": "Email",
+              "fieldValue": "={{ $json.results[0].properties.email }}"
+            },
+            {
+              "fieldId": "Lead Score",
+              "fieldValue": "={{ $json.results[0].properties.lead_score }}"
+            },
+            {
+              "fieldId": "Stage",
+              "fieldValue": "={{ $json.results[0].properties.lead_stage }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2f10cceb-f39f-4587-af16-ffd5727448be",
+      "name": "Google Sheets Logging → 📊 Nurture Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [
+        -128,
+        1088
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wVYRwqwDWOAHcVD5",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        976
+      ],
+      "id": "558cea21-5da4-4545-b6c9-8d16f88b8f58",
+      "name": "Wait (3 Days) → ⏳ Delay for Nurture Recheck",
+      "webhookId": "ddbb055a-3a09-43c5-a482-bf5301309781"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"filterGroups\": [\n    {\n      \"filters\": [\n        {\n          \"propertyName\": \"lead_stage\",\n          \"operator\": \"EQ\",\n          \"value\": \"Nurture\"\n        }\n      ]\n    }\n  ],\n  \"properties\": [\"email\", \"lead_score\", \"lead_stage\", \"firstname\", \"company\"]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -528,
+        976
+      ],
+      "id": "810b6a82-cc02-4fbe-8049-b74d3d85ed6c",
+      "name": "HubSpot API Check → 🔍 HubSpot Revalidation",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "HXbJUSf6OXv1U2sl",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🟢 1. Webhook Trigger\n🧩 Entry Point — Receives form submissions from Typeform.\n\nAccepts POST requests containing lead info.  \nWebhook path: `/webhook/new-lead-webhook`\n",
+        "height": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1776,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "16c71690-8744-40e5-9f54-b43a2f824e2d",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## 🟦 2. Extract Lead Data\n🧠 Parses Typeform JSON to extract key fields:\n- first_name  \n- last_name  \n- email  \n- company  \n\nAutomatically derives the email domain for enrichment steps.\n",
+        "height": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1504,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "26334430-0178-403a-b6f1-19ba8c846639",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## 3.🟩 Hunter.io Verification\n✅ Verifies lead email validity using the Hunter.io API.\n\nEnsures only real and deliverable emails proceed to the next step.\n",
+        "height": 448,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1232,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "7ca632b4-6bc7-4b85-bcdb-886dec2381fe",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## 4.🟨 Extract Domain for Abstract\n🧩 Extracts the domain from the lead’s email address.\n\nUsed as input for the Abstract API enrichment request.\n",
+        "height": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -992,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "09a8c421-2ef5-4266-802a-2ffe3eb5b0b0",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## 5.🟧 Abstract Company Enrichment\n🌐 Calls Abstract API to enrich company details.\n\nFetches industry, employee count, location, and website metadata.\n",
+        "height": 464
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -736,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "5fe4bb20-be20-42d6-908a-ff7262bd41d0",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "## 6.🟪 Lead Scoring & Routing Logic\n📊 Calculates lead score based on:\n- Company size\n- Target country\n- Industry match\n- Domain type (business vs. free)\n- LinkedIn presence\n\nAssigns lead_tier: Cold / Warm / Hot.\n",
+        "height": 464,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -480,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "1ca4d71f-0800-40c4-89d8-7434b7285446",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "## 7.🔵 IF High Priority\n⚙️ Decision Node — Routes leads based on score:\n\n✅ TRUE (≥70): Qualified → HubSpot (Qualified Path)  \n❌ FALSE (<70): Nurture → HubSpot (Nurture Path)\n",
+        "height": 272,
+        "width": 384
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1776,
+        480
+      ],
+      "typeVersion": 1,
+      "id": "6be1ad8b-9c55-45f2-9b2f-651272441107",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "## 7.1 🟣 HubSpot Create Contact (Qualified)\n🚀 Creates “Qualified” contact in HubSpot CRM.\n\nIncludes enrichment data, lead score, and lead stage = Qualified.\n",
+        "height": 320,
+        "width": 496
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1280,
+        432
+      ],
+      "typeVersion": 1,
+      "id": "0dbbb536-d50e-4607-bf95-f728769120d7",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "## 7.2 🟤 HubSpot Create Contact (Nurture)\n🌱 Creates “Nurture” stage contact in HubSpot.\n\nUsed for lower-priority leads entering a recheck cycle.\n",
+        "height": 400,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1280,
+        768
+      ],
+      "typeVersion": 1,
+      "id": "1e80e65d-c115-4aec-8ac9-04ab942787d7",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "## 7.2.1 🟠 Wait (3 Days) → ⏳ Delay for Nurture Recheck\n⏳ Delays workflow for follow-up revalidation.\n\nCurrent test delay: 10 seconds  \nProduction delay: 3 days\n",
+        "height": 400,
+        "width": 336
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -960,
+        768
+      ],
+      "typeVersion": 1,
+      "id": "ef3931c0-a7cd-4ce6-951b-fba5bfd8f764",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "## 7.2.2 🔴 HubSpot API Check → 🔍 HubSpot Revalidation\n🔍 Queries HubSpot CRM for contacts still in Nurture stage.\n\nReturns latest info like:\n- Email\n- Company\n- Lead Score\n- Lead Stage\n",
+        "height": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -608,
+        640
+      ],
+      "typeVersion": 1,
+      "id": "1e457e3c-6183-457a-b691-4ffed4127128",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## 7.2.2.1 🟢 Slack Notification → 📨 Nurture Alert\n💬 Sends Slack alert for leads still in NURTURE stage.\n\nIncludes:\n🏢 Company  \n📧 Email  \n💥 Lead Score  \n🕒 Timestamp\n",
+        "height": 448,
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -336,
+        448
+      ],
+      "typeVersion": 1,
+      "id": "4768b6d8-0ffe-4b2c-810e-edab1d4c232b",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## 7.2.2.2 🟣 Google Sheets Logging → 📊 Nurture Log \n📄 Appends lead details to Google Sheet “Nurture Follow-Up Log”.\n\nLogs:\n- Date\n- Company\n- Email\n- Lead Score\n- Stage\n",
+        "height": 352,
+        "width": 432
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -320,
+        944
+      ],
+      "typeVersion": 1,
+      "id": "a7ff1f21-b4a9-4522-a872-a41f95250f92",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "content": "## 📝 Workflow Summary Note\n🧭 Smart Lead Routing & Qualification System\n\nAutomates lead intake, enrichment, scoring, and CRM sync.\nEcosystem:\n\nTypeform → Hunter.io → Abstract API → HubSpot → Slack → Sheets\n",
+        "height": 176,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1824,
+        912
+      ],
+      "typeVersion": 1,
+      "id": "af9ceaa5-be59-400e-a7d5-fc4a477add72",
+      "name": "Sticky Note13"
+    }
+  ],
+  "pinData": {
+    "Webhook Trigger": [
+      {
+        "json": {
+          "headers": {
+            "host": "dataplusminus.app.n8n.cloud",
+            "user-agent": "Typeform Webhooks",
+            "content-length": "1855",
+            "accept-encoding": "gzip, br",
+            "baggage": "userToken=01K82XM8D75R4HY7AECMSNW71C,rootTraceId=88398d4842a139a1f24bbf2714d28c7b,userId=01JSKWGRXNYS8P78S4TZNZ4EZB,rootTimestamp=1761311533790,actorType=user",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "18.210.136.162",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "9939b980137bf26c-IAD",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "traceparent": "00-88398d4842a139a1f24bbf2714d28c7b-3216531b341fb664-01",
+            "x-forwarded-for": "18.210.136.162, 172.71.223.202",
+            "x-forwarded-host": "dataplusminus.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-44-68df68bcf-nbsj5",
+            "x-is-trusted": "yes",
+            "x-real-ip": "18.210.136.162",
+            "x-request-id": "1fede5fc-62ae-48b5-9168-7959922bf072"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "event_id": "01K8B5JAQEAWH1N01A95B24EX7",
+            "event_type": "form_response",
+            "form_response": {
+              "form_id": "hjrxSaHE",
+              "token": "01K8B5JAQEAWH1N01A95B24EX7",
+              "landed_at": "2025-10-24T13:12:14Z",
+              "submitted_at": "2025-10-24T13:12:14Z",
+              "definition": {
+                "id": "hjrxSaHE",
+                "title": "My new form",
+                "fields": [
+                  {
+                    "id": "EYcXqzuApBkC",
+                    "ref": "977324c9-a952-461c-aeaa-18fda4ae614f",
+                    "type": "short_text",
+                    "title": "First name",
+                    "properties": {}
+                  },
+                  {
+                    "id": "fs7fTahz3UEv",
+                    "ref": "6f7ab18c-a52e-4e35-80ff-769d5a8d396e",
+                    "type": "short_text",
+                    "title": "Last name",
+                    "properties": {}
+                  },
+                  {
+                    "id": "INhAyccJHeHn",
+                    "ref": "97d8dce6-61c3-464d-bbe6-27ae88da1996",
+                    "type": "email",
+                    "title": "Email",
+                    "properties": {}
+                  },
+                  {
+                    "id": "RZmmj2jspbzR",
+                    "ref": "8c525d7c-1ac1-412a-b43f-e519c0cf8396",
+                    "type": "short_text",
+                    "title": "Company",
+                    "properties": {}
+                  }
+                ],
+                "endings": [
+                  {
+                    "id": "DefaultTyScreen",
+                    "ref": "default_tys",
+                    "title": "Thanks for completing this typeform\nNow *create your own* — it's free, easy, & beautiful",
+                    "type": "thankyou_screen",
+                    "properties": {
+                      "button_text": "Create a *typeform*",
+                      "show_button": true,
+                      "share_icons": false,
+                      "button_mode": "default_redirect"
+                    },
+                    "attachment": {
+                      "type": "image",
+                      "href": "https://public-assets.typeform.com/public/admin/2dpnUBBkz2VN.gif"
+                    }
+                  }
+                ],
+                "settings": {
+                  "partial_responses_to_all_integrations": true
+                }
+              },
+              "answers": [
+                {
+                  "type": "text",
+                  "text": "Lorem ipsum dolor",
+                  "field": {
+                    "id": "EYcXqzuApBkC",
+                    "type": "short_text",
+                    "ref": "977324c9-a952-461c-aeaa-18fda4ae614f"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "Lorem ipsum dolor",
+                  "field": {
+                    "id": "fs7fTahz3UEv",
+                    "type": "short_text",
+                    "ref": "6f7ab18c-a52e-4e35-80ff-769d5a8d396e"
+                  }
+                },
+                {
+                  "type": "email",
+                  "email": "an_account@example.com",
+                  "field": {
+                    "id": "INhAyccJHeHn",
+                    "type": "email",
+                    "ref": "97d8dce6-61c3-464d-bbe6-27ae88da1996"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "Lorem ipsum dolor",
+                  "field": {
+                    "id": "RZmmj2jspbzR",
+                    "type": "short_text",
+                    "ref": "8c525d7c-1ac1-412a-b43f-e519c0cf8396"
+                  }
+                }
+              ],
+              "ending": {
+                "id": "DefaultTyScreen",
+                "ref": "default_tys"
+              }
+            }
+          },
+          "webhookUrl": "https://dataplusminus.app.n8n.cloud/webhook-test/new-lead-webhook",
+          "executionMode": "test"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Hunter.io Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunter.io Verification": {
+      "main": [
+        [
+          {
+            "node": "Extract Domain for Abstract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF High Priority": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Create Contact (Qualified)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot Create Contact (Nurture)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Create Contact (Qualified)": {
+      "main": [
+        []
+      ]
+    },
+    "Abstract Company Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Lead Scoring & Routing Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Domain for Abstract": {
+      "main": [
+        [
+          {
+            "node": "Abstract Company Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Scoring & Routing Logic": {
+      "main": [
+        [
+          {
+            "node": "IF High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Create Contact (Nurture)": {
+      "main": [
+        [
+          {
+            "node": "Wait (3 Days) → ⏳ Delay for Nurture Recheck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (3 Days) → ⏳ Delay for Nurture Recheck": {
+      "main": [
+        [
+          {
+            "node": "HubSpot API Check → 🔍 HubSpot Revalidation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot API Check → 🔍 HubSpot Revalidation": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Logging → 📊 Nurture Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notification → 📨 Nurture Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "383a9f72-710b-4886-8fa6-95caeff8c413",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "76f06a30ee768f89c6ff0d243373c374d3121b030a6b7f852dd91210a1e890ad"
+  },
+  "id": "9deSZNrcbv2Kzbk2",
+  "tags": []
+}
